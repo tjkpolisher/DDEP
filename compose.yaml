@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ddep}
+      POSTGRES_USER: ${POSTGRES_USER:-ddep}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ddep}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-ddep} -d $${POSTGRES_DB:-ddep}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DDEP_ENVIRONMENT: ${DDEP_ENVIRONMENT:-local}
+      DDEP_DATABASE_URL: ${DDEP_DATABASE_URL:-postgresql+psycopg://ddep:ddep@db:5432/ddep}
+      DDEP_CORS_ORIGINS: ${DDEP_CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:

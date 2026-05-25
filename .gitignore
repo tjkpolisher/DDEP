@@ -1,2 +1,25 @@
 # local claude settings
 .claude/settings.local.json
+.omx/
+
+# environment
+.env
+backend/.env
+frontend/.env*.local
+
+# python
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.mypy_cache/
+backend/__pycache__/
+backend/src/**/__pycache__/
+backend/tests/**/__pycache__/
+
+# node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# logs
+*.log
