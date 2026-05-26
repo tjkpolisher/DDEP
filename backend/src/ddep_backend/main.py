@@ -9,6 +9,7 @@ from ddep_backend.result_report.models import ResultReport
 from ddep_backend.schemas.health import HealthResponse
 from ddep_backend.search_agent.api import preview_recommendations
 from ddep_backend.search_agent.models import RecommendationRequest, RecommendationRun
+from ddep_backend.service_mvp.api import router as service_mvp_router
 
 
 def create_app() -> FastAPI:
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(service_mvp_router)
 
     @app.get("/health")
     async def health() -> HealthResponse:

@@ -51,6 +51,17 @@ Health check:
 curl http://localhost:8000/health
 ```
 
+Internal MVP access uses invite verification plus bearer tokens. Seed invite codes by inserting
+`sha256(f"{DDEP_ACCESS_TOKEN_SECRET}:<invite>")` into `invite_codes.code_hash`, then call:
+
+```bash
+curl -X POST http://localhost:8000/access/verify \
+  -H "Content-Type: application/json" \
+  -d '{"invite_code":"beta","display_name":"Ada","email":"ada@example.com"}'
+```
+
+Use the returned token as `Authorization: Bearer <token>` for `/diagnoses` and `/ops/events`.
+
 ### Frontend
 
 ```bash

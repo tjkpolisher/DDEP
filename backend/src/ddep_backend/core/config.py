@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     app_name: str = "DDEP API"
     environment: str = "local"
     database_url: str = "postgresql+psycopg://ddep:ddep@localhost:5432/ddep"
+    access_token_secret: str = "local-dev-secret-change-before-shared-use"
+    access_token_ttl_hours: int = 24
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",

@@ -16,6 +16,14 @@ import { diagnosisDomains } from "@/lib/domains";
 import { fetchHealth, type HealthResponse } from "@/lib/health";
 import { recommendationRunSchema, type RecommendationRun } from "@/lib/recommendations";
 import { resultReportSchema, type DomainReadiness, type ResultReport } from "@/lib/result-report";
+import {
+  completeDiagnosis,
+  createDiagnosis,
+  saveAnswer,
+  verifyAccess,
+  type CompleteDiagnosisResponse,
+  type DiagnosisSession,
+} from "@/lib/service-mvp";
 
 type ApiState =
   | { status: "checking"; data: null; message: string }
@@ -247,6 +255,14 @@ export default function Home() {
     data: null,
     message: "API 상태 확인 중",
   });
+  const [inviteCode, setInviteCode] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [token, setToken] = useState<string | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosisSession | null>(null);
+  const [selectedChoices, setSelectedChoices] = useState<Record<string, string>>({});
+  const [completed, setCompleted] = useState<CompleteDiagnosisResponse | null>(null);
+  const [workflowMessage, setWorkflowMessage] = useState("초대 코드로 내부 진단을 시작합니다");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -273,8 +289,8 @@ export default function Home() {
     return () => controller.abort();
   }, []);
 
-  const report = demoReport;
-  const recommendations = demoRecommendations;
+  const report = completed?.report ?? demoReport;
+  const recommendations = completed?.recommendations ?? demoRecommendations;
   const weakDomainLabels = useMemo(
     () =>
       report.strength_weakness.weakness_domains
@@ -302,6 +318,81 @@ export default function Home() {
 
       <section className="mx-auto grid w-full max-w-7xl gap-5 px-5 py-6 sm:px-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
+          <AccessAndDiagnosisPanel
+            diagnosis={diagnosis}
+            displayName={displayName}
+            email={email}
+            inviteCode={inviteCode}
+            selectedChoices={selectedChoices}
+            token={token}
+            workflowMessage={workflowMessage}
+            onDisplayNameChange={setDisplayName}
+            onEmailChange={setEmail}
+            onInviteCodeChange={setInviteCode}
+            onSelectChoice={(questionId, choiceKey) =>
+              setSelectedChoices((current) => ({ ...current, [questionId]: choiceKey }))
+            }
+            onVerify={async () => {
+              try {
+                const access = await verifyAccess({
+                  invite_code: inviteCode,
+                  display_name: displayName,
+                  email: email || undefined,
+                });
+                setToken(access.token);
+                setWorkflowMessage(`${access.user.display_name} 세션이 열렸습니다`);
+              } catch (error) {
+                setWorkflowMessage(error instanceof Error ? error.message : "접근 확인 실패");
+              }
+            }}
+            onStart={async () => {
+              if (!token) {
+                return;
+              }
+              try {
+                const nextDiagnosis = await createDiagnosis(token);
+                setDiagnosis(nextDiagnosis);
+                setCompleted(null);
+                setWorkflowMessage(`${nextDiagnosis.question_count}문항 진단이 시작됐습니다`);
+              } catch (error) {
+                setWorkflowMessage(error instanceof Error ? error.message : "진단 시작 실패");
+              }
+            }}
+            onSubmitAnswer={async (questionId) => {
+              if (!token || !diagnosis) {
+                return;
+              }
+              const choiceKey = selectedChoices[questionId];
+              if (!choiceKey) {
+                setWorkflowMessage("선택지를 먼저 고르세요");
+                return;
+              }
+              try {
+                await saveAnswer({
+                  token,
+                  diagnosisId: diagnosis.id,
+                  questionExternalId: questionId,
+                  choiceKeys: [choiceKey],
+                });
+                setWorkflowMessage(`${questionId} 답변이 저장됐습니다`);
+              } catch (error) {
+                setWorkflowMessage(error instanceof Error ? error.message : "답변 저장 실패");
+              }
+            }}
+            onComplete={async () => {
+              if (!token || !diagnosis) {
+                return;
+              }
+              try {
+                const result = await completeDiagnosis(token, diagnosis.id);
+                setCompleted(result);
+                setDiagnosis(result.diagnosis);
+                setWorkflowMessage("진단 결과와 추천 자료가 저장됐습니다");
+              } catch (error) {
+                setWorkflowMessage(error instanceof Error ? error.message : "진단 완료 실패");
+              }
+            }}
+          />
           <ReportSummary report={report} weakDomainLabels={weakDomainLabels} />
           <DomainGrid report={report} />
           <Roadmap report={report} />
@@ -344,6 +435,135 @@ function ReportSummary({
         value={domainLabel.get(report.snapshot.strongest_domain ?? "software") ?? "-"}
         detail={`${report.strength_weakness.strength_domains.length}개 도메인`}
       />
+    </section>
+  );
+}
+
+function AccessAndDiagnosisPanel({
+  diagnosis,
+  displayName,
+  email,
+  inviteCode,
+  selectedChoices,
+  token,
+  workflowMessage,
+  onComplete,
+  onDisplayNameChange,
+  onEmailChange,
+  onInviteCodeChange,
+  onSelectChoice,
+  onStart,
+  onSubmitAnswer,
+  onVerify,
+}: {
+  diagnosis: DiagnosisSession | null;
+  displayName: string;
+  email: string;
+  inviteCode: string;
+  selectedChoices: Record<string, string>;
+  token: string | null;
+  workflowMessage: string;
+  onComplete: () => Promise<void>;
+  onDisplayNameChange: (value: string) => void;
+  onEmailChange: (value: string) => void;
+  onInviteCodeChange: (value: string) => void;
+  onSelectChoice: (questionId: string, choiceKey: string) => void;
+  onStart: () => Promise<void>;
+  onSubmitAnswer: (questionId: string) => Promise<void>;
+  onVerify: () => Promise<void>;
+}) {
+  const firstQuestion = diagnosis?.questions[0];
+  return (
+    <section className="rounded-md border border-[#d8dee9] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold tracking-normal">내부 MVP 진단</h2>
+        <span className="text-sm text-[#536173]">{workflowMessage}</span>
+      </div>
+      {!token ? (
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+          <input
+            className="rounded-md border border-[#cfd7e3] px-3 py-2 text-sm"
+            onChange={(event) => onInviteCodeChange(event.target.value)}
+            placeholder="Invite code"
+            value={inviteCode}
+          />
+          <input
+            className="rounded-md border border-[#cfd7e3] px-3 py-2 text-sm"
+            onChange={(event) => onDisplayNameChange(event.target.value)}
+            placeholder="Display name"
+            value={displayName}
+          />
+          <input
+            className="rounded-md border border-[#cfd7e3] px-3 py-2 text-sm"
+            onChange={(event) => onEmailChange(event.target.value)}
+            placeholder="Email"
+            value={email}
+          />
+          <button
+            className="rounded-md bg-[#087f83] px-4 py-2 text-sm font-semibold text-white"
+            onClick={onVerify}
+            type="button"
+          >
+            확인
+          </button>
+        </div>
+      ) : null}
+      {token && !diagnosis ? (
+        <button
+          className="rounded-md bg-[#087f83] px-4 py-2 text-sm font-semibold text-white"
+          onClick={onStart}
+          type="button"
+        >
+          진단 시작
+        </button>
+      ) : null}
+      {firstQuestion ? (
+        <div className="grid gap-4">
+          <div className="rounded-md border border-[#e1e7ef] p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="rounded-md bg-[#e5f4f3] px-2 py-1 text-xs font-semibold text-[#087f83]">
+                {domainLabel.get(firstQuestion.domain)}
+              </span>
+              <span className="rounded-md bg-[#edf2f7] px-2 py-1 text-xs text-[#536173]">
+                {firstQuestion.difficulty}
+              </span>
+            </div>
+            <p className="text-base font-semibold leading-7">{firstQuestion.prompt}</p>
+            <div className="mt-4 grid gap-2">
+              {firstQuestion.choices.map((choice) => (
+                <label
+                  className="flex items-center gap-3 rounded-md border border-[#d8dee9] px-3 py-2 text-sm"
+                  key={choice.key}
+                >
+                  <input
+                    checked={selectedChoices[firstQuestion.external_id] === choice.key}
+                    name={firstQuestion.external_id}
+                    onChange={() => onSelectChoice(firstQuestion.external_id, choice.key)}
+                    type="radio"
+                  />
+                  <span>{choice.text}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              className="rounded-md border border-[#087f83] px-4 py-2 text-sm font-semibold text-[#087f83]"
+              onClick={() => onSubmitAnswer(firstQuestion.external_id)}
+              type="button"
+            >
+              답변 저장
+            </button>
+            <button
+              className="rounded-md bg-[#087f83] px-4 py-2 text-sm font-semibold text-white"
+              onClick={onComplete}
+              type="button"
+            >
+              완료
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
