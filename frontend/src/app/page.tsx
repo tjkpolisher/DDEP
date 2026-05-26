@@ -22,6 +22,7 @@ import {
   saveAnswer,
   verifyAccess,
   type CompleteDiagnosisResponse,
+  type DiagnosisQuestion,
   type DiagnosisSession,
 } from "@/lib/service-mvp";
 
@@ -29,6 +30,11 @@ type ApiState =
   | { status: "checking"; data: null; message: string }
   | { status: "online"; data: HealthResponse; message: string }
   | { status: "offline"; data: null; message: string };
+
+type DraftAnswer = {
+  choiceKeys: string[];
+  shortAnswer: string;
+};
 
 const domainLabel = new Map(diagnosisDomains.map((domain) => [domain.slug, domain.label]));
 
@@ -260,7 +266,7 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [diagnosis, setDiagnosis] = useState<DiagnosisSession | null>(null);
-  const [selectedChoices, setSelectedChoices] = useState<Record<string, string>>({});
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, DraftAnswer>>({});
   const [savedQuestionIds, setSavedQuestionIds] = useState<Set<string>>(new Set());
   const [completed, setCompleted] = useState<CompleteDiagnosisResponse | null>(null);
   const [workflowMessage, setWorkflowMessage] = useState("초대 코드로 내부 진단을 시작합니다");
@@ -324,15 +330,21 @@ export default function Home() {
             displayName={displayName}
             email={email}
             inviteCode={inviteCode}
-            selectedChoices={selectedChoices}
+            draftAnswers={draftAnswers}
             savedQuestionIds={savedQuestionIds}
             token={token}
             workflowMessage={workflowMessage}
             onDisplayNameChange={setDisplayName}
             onEmailChange={setEmail}
             onInviteCodeChange={setInviteCode}
-            onSelectChoice={(questionId, choiceKey) =>
-              setSelectedChoices((current) => ({ ...current, [questionId]: choiceKey }))
+            onAnswerChange={(questionId, answer) =>
+              setDraftAnswers((current) => ({
+                ...current,
+                [questionId]: {
+                  choiceKeys: answer.choiceKeys ?? current[questionId]?.choiceKeys ?? [],
+                  shortAnswer: answer.shortAnswer ?? current[questionId]?.shortAnswer ?? "",
+                },
+              }))
             }
             onVerify={async () => {
               try {
@@ -355,7 +367,7 @@ export default function Home() {
                 const nextDiagnosis = await createDiagnosis(token);
                 setDiagnosis(nextDiagnosis);
                 setCompleted(null);
-                setSelectedChoices({});
+                setDraftAnswers({});
                 setSavedQuestionIds(new Set());
                 setWorkflowMessage(`${nextDiagnosis.question_count}문항 진단이 시작됐습니다`);
               } catch (error) {
@@ -366,9 +378,10 @@ export default function Home() {
               if (!token || !diagnosis) {
                 return;
               }
-              const choiceKey = selectedChoices[questionId];
-              if (!choiceKey) {
-                setWorkflowMessage("선택지를 먼저 고르세요");
+              const question = diagnosis.questions.find((item) => item.external_id === questionId);
+              const draft = draftAnswers[questionId] ?? { choiceKeys: [], shortAnswer: "" };
+              if (!question || !isAnswerReady(question, draft)) {
+                setWorkflowMessage("답변을 먼저 입력하세요");
                 return;
               }
               try {
@@ -376,7 +389,8 @@ export default function Home() {
                   token,
                   diagnosisId: diagnosis.id,
                   questionExternalId: questionId,
-                  choiceKeys: [choiceKey],
+                  choiceKeys: draft.choiceKeys,
+                  shortAnswer: question.answer_type === "short_answer" ? draft.shortAnswer : undefined,
                 });
                 setSavedQuestionIds((current) => new Set(current).add(questionId));
                 setWorkflowMessage(`${questionId} 답변이 저장됐습니다`);
@@ -453,9 +467,9 @@ function ReportSummary({
 function AccessAndDiagnosisPanel({
   diagnosis,
   displayName,
+  draftAnswers,
   email,
   inviteCode,
-  selectedChoices,
   savedQuestionIds,
   token,
   workflowMessage,
@@ -463,16 +477,16 @@ function AccessAndDiagnosisPanel({
   onDisplayNameChange,
   onEmailChange,
   onInviteCodeChange,
-  onSelectChoice,
+  onAnswerChange,
   onStart,
   onSubmitAnswer,
   onVerify,
 }: {
   diagnosis: DiagnosisSession | null;
   displayName: string;
+  draftAnswers: Record<string, DraftAnswer>;
   email: string;
   inviteCode: string;
-  selectedChoices: Record<string, string>;
   savedQuestionIds: Set<string>;
   token: string | null;
   workflowMessage: string;
@@ -480,7 +494,7 @@ function AccessAndDiagnosisPanel({
   onDisplayNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onInviteCodeChange: (value: string) => void;
-  onSelectChoice: (questionId: string, choiceKey: string) => void;
+  onAnswerChange: (questionId: string, answer: Partial<DraftAnswer>) => void;
   onStart: () => Promise<void>;
   onSubmitAnswer: (questionId: string) => Promise<void>;
   onVerify: () => Promise<void>;
@@ -556,22 +570,11 @@ function AccessAndDiagnosisPanel({
                 ) : null}
               </div>
               <p className="text-base font-semibold leading-7">{question.prompt}</p>
-              <div className="mt-4 grid gap-2">
-                {question.choices.map((choice) => (
-                  <label
-                    className="flex items-center gap-3 rounded-md border border-[#d8dee9] px-3 py-2 text-sm"
-                    key={choice.key}
-                  >
-                    <input
-                      checked={selectedChoices[question.external_id] === choice.key}
-                      name={question.external_id}
-                      onChange={() => onSelectChoice(question.external_id, choice.key)}
-                      type="radio"
-                    />
-                    <span>{choice.text}</span>
-                  </label>
-                ))}
-              </div>
+              <QuestionAnswerInput
+                draft={draftAnswers[question.external_id] ?? { choiceKeys: [], shortAnswer: "" }}
+                onChange={(answer) => onAnswerChange(question.external_id, answer)}
+                question={question}
+              />
               <button
                 className="mt-4 rounded-md border border-[#087f83] px-4 py-2 text-sm font-semibold text-[#087f83]"
                 onClick={() => onSubmitAnswer(question.external_id)}
@@ -593,6 +596,57 @@ function AccessAndDiagnosisPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function QuestionAnswerInput({
+  draft,
+  onChange,
+  question,
+}: {
+  draft: DraftAnswer;
+  onChange: (answer: Partial<DraftAnswer>) => void;
+  question: DiagnosisQuestion;
+}) {
+  if (question.answer_type === "short_answer") {
+    return (
+      <input
+        className="mt-4 w-full rounded-md border border-[#d8dee9] px-3 py-2 text-sm"
+        onChange={(event) => onChange({ shortAnswer: event.target.value })}
+        placeholder="답변 입력"
+        value={draft.shortAnswer}
+      />
+    );
+  }
+
+  const inputType = question.answer_type === "multi_select" ? "checkbox" : "radio";
+  return (
+    <div className="mt-4 grid gap-2">
+      {question.choices.map((choice) => {
+        const checked = draft.choiceKeys.includes(choice.key);
+        return (
+          <label
+            className="flex items-center gap-3 rounded-md border border-[#d8dee9] px-3 py-2 text-sm"
+            key={choice.key}
+          >
+            <input
+              checked={checked}
+              name={question.external_id}
+              onChange={() =>
+                onChange({
+                  choiceKeys:
+                    question.answer_type === "multi_select"
+                      ? toggleChoice(draft.choiceKeys, choice.key)
+                      : [choice.key],
+                })
+              }
+              type={inputType}
+            />
+            <span>{choice.text}</span>
+          </label>
+        );
+      })}
+    </div>
   );
 }
 
@@ -841,4 +895,17 @@ function difficultyLabel(difficulty: RecommendationRun["recommendations"][number
     advanced: "심화",
   };
   return labels[difficulty];
+}
+
+function isAnswerReady(question: DiagnosisQuestion, draft: DraftAnswer) {
+  if (question.answer_type === "short_answer") {
+    return draft.shortAnswer.trim().length > 0;
+  }
+  return draft.choiceKeys.length > 0;
+}
+
+function toggleChoice(current: string[], choiceKey: string) {
+  return current.includes(choiceKey)
+    ? current.filter((key) => key !== choiceKey)
+    : [...current, choiceKey];
 }
