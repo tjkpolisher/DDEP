@@ -41,10 +41,10 @@ def recommend_learning_resources(
         fallback_reasons.append("low_trust_results_filtered")
     if not _has_direct_match(verified, request):
         fallback_reasons.append("no_direct_concept_match")
-        verified = _fallback_candidates(resource_provider, request, query_terms, verified)
+        verified = _fallback_candidates(resource_provider, request, verified)
     if len(verified) < max(request.min_results, MIN_RECOMMENDATION_COUNT):
         fallback_reasons.append("insufficient_verified_results")
-        verified = _fallback_candidates(resource_provider, request, query_terms, verified)
+        verified = _fallback_candidates(resource_provider, request, verified)
 
     recommendations = _rank(verified, request)[: request.max_results]
     return RecommendationRun(
@@ -116,7 +116,6 @@ def _rank(
 def _fallback_candidates(
     provider: LearningResourceProvider,
     request: RecommendationRequest,
-    query_terms: list[str],
     existing: list[LearningResourceCandidate],
 ) -> list[LearningResourceCandidate]:
     existing_urls = {str(candidate.url) for candidate in existing}
