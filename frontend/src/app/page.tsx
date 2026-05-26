@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Gauge,
   RefreshCw,
+  ShieldCheck,
   Route,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { StatusPill } from "@/components/ui/status-pill";
 import { diagnosisDomains } from "@/lib/domains";
 import { fetchHealth, type HealthResponse } from "@/lib/health";
+import { recommendationRunSchema, type RecommendationRun } from "@/lib/recommendations";
 import { resultReportSchema, type DomainReadiness, type ResultReport } from "@/lib/result-report";
 
 type ApiState =
@@ -173,6 +175,72 @@ const demoReport = resultReportSchema.parse({
   },
 });
 
+const demoRecommendations = recommendationRunSchema.parse({
+  query_terms: ["imu", "sensor_fusion", "pid", "attitude_control"],
+  fallback_reasons: [],
+  candidate_count: 8,
+  verified_candidate_count: 7,
+  recommendations: [
+    {
+      title: "PX4 Controller Diagrams",
+      url: "https://docs.px4.io/main/en/flight_stack/controller_diagrams.html",
+      source_name: "PX4",
+      source_type: "official_docs",
+      difficulty: "intermediate",
+      trust_score: 0.98,
+      recommendation_reason: "pid, attitude_control 보강에 직접 연결되는 검증 자료",
+      prerequisite_tags: ["imu", "sensor_fusion"],
+      concept_tags: ["pid", "attitude_control", "rate_control"],
+      score: {
+        trust: 0.343,
+        level_fit: 0.25,
+        freshness: 0.135,
+        practice: 0.0975,
+        dedupe: 0.1,
+        total: 0.9255,
+      },
+    },
+    {
+      title: "Betaflight PID Tuning Guide",
+      url: "https://betaflight.com/docs/wiki/guides/current/PID-Tuning-Guide",
+      source_name: "Betaflight",
+      source_type: "official_docs",
+      difficulty: "intermediate",
+      trust_score: 0.92,
+      recommendation_reason: "pid 보강에 직접 연결되는 검증 자료",
+      prerequisite_tags: ["gyro"],
+      concept_tags: ["pid", "flight_tuning"],
+      score: {
+        trust: 0.322,
+        level_fit: 0.25,
+        freshness: 0.129,
+        practice: 0.135,
+        dedupe: 0.1,
+        total: 0.936,
+      },
+    },
+    {
+      title: "MIT Underactuated Robotics: State Estimation",
+      url: "https://underactuated.mit.edu/state_estimation.html",
+      source_name: "MIT",
+      source_type: "open_course",
+      difficulty: "advanced",
+      trust_score: 0.93,
+      recommendation_reason: "sensor_fusion 보강에 직접 연결되는 검증 자료",
+      prerequisite_tags: ["linear_algebra", "probability"],
+      concept_tags: ["sensor_fusion", "ekf", "state_estimation"],
+      score: {
+        trust: 0.3255,
+        level_fit: 0.175,
+        freshness: 0.1125,
+        practice: 0.0525,
+        dedupe: 0.1,
+        total: 0.7655,
+      },
+    },
+  ],
+});
+
 export default function Home() {
   const [apiState, setApiState] = useState<ApiState>({
     status: "checking",
@@ -206,6 +274,7 @@ export default function Home() {
   }, []);
 
   const report = demoReport;
+  const recommendations = demoRecommendations;
   const weakDomainLabels = useMemo(
     () =>
       report.strength_weakness.weakness_domains
@@ -236,6 +305,7 @@ export default function Home() {
           <ReportSummary report={report} weakDomainLabels={weakDomainLabels} />
           <DomainGrid report={report} />
           <Roadmap report={report} />
+          <Recommendations run={recommendations} />
         </div>
         <aside className="space-y-5">
           <WeakTags report={report} />
@@ -346,6 +416,56 @@ function Roadmap({ report }: { report: ResultReport }) {
               <p className="mt-2 text-sm text-[#536173]">{item.reason}</p>
             </div>
           </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Recommendations({ run }: { run: RecommendationRun }) {
+  return (
+    <section className="rounded-md border border-[#d8dee9] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <ShieldCheck aria-hidden="true" size={19} className="text-[#087f83]" />
+          <h2 className="text-lg font-semibold tracking-normal">검증 학습 자료</h2>
+        </div>
+        <span className="text-sm text-[#536173]">
+          {run.verified_candidate_count}/{run.candidate_count} 후보 검증 통과
+        </span>
+      </div>
+      <div className="grid gap-3 xl:grid-cols-3">
+        {run.recommendations.map((recommendation) => (
+          <a
+            key={recommendation.url}
+            href={recommendation.url}
+            className="min-h-56 rounded-md border border-[#e1e7ef] p-4 transition hover:border-[#087f83]"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md bg-[#e5f4f3] px-2 py-1 text-xs font-semibold text-[#087f83]">
+                {recommendation.source_name}
+              </span>
+              <span className="rounded-md bg-[#edf2f7] px-2 py-1 text-xs text-[#536173]">
+                {difficultyLabel(recommendation.difficulty)}
+              </span>
+            </div>
+            <h3 className="mt-4 text-base font-semibold leading-6 tracking-normal">
+              {recommendation.title}
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-[#536173]">
+              {recommendation.recommendation_reason}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {recommendation.concept_tags.slice(0, 3).map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-md border border-[#d8dee9] px-2 py-1 font-mono text-xs text-[#536173]"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </a>
         ))}
       </div>
     </section>
@@ -464,4 +584,13 @@ function scoreClass(score: number) {
     return `${base} bg-[#edf2f7] text-[#334155]`;
   }
   return `${base} bg-[#fff4ec] text-[#994b12]`;
+}
+
+function difficultyLabel(difficulty: RecommendationRun["recommendations"][number]["difficulty"]) {
+  const labels = {
+    intro: "입문",
+    intermediate: "중급",
+    advanced: "심화",
+  };
+  return labels[difficulty];
 }

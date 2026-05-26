@@ -7,6 +7,8 @@ from ddep_backend.domains import DIAGNOSIS_DOMAINS
 from ddep_backend.result_report.api import ResultReportPreviewRequest, preview_result_report
 from ddep_backend.result_report.models import ResultReport
 from ddep_backend.schemas.health import HealthResponse
+from ddep_backend.search_agent.api import preview_recommendations
+from ddep_backend.search_agent.models import RecommendationRequest, RecommendationRun
 
 
 def create_app() -> FastAPI:
@@ -33,6 +35,10 @@ def create_app() -> FastAPI:
     @app.post("/result-report/preview")
     async def result_report_preview(request: ResultReportPreviewRequest) -> ResultReport:
         return preview_result_report(request)
+
+    @app.post("/recommendations/preview")
+    async def recommendations_preview(request: RecommendationRequest) -> RecommendationRun:
+        return preview_recommendations(request)
 
     return app
 
