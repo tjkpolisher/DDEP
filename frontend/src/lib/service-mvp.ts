@@ -71,14 +71,16 @@ export async function saveAnswer(input: {
   token: string;
   diagnosisId: string;
   questionExternalId: string;
-  choiceKeys: string[];
+  choiceKeys?: string[];
+  shortAnswer?: string;
 }): Promise<void> {
   await apiFetch(`/diagnoses/${input.diagnosisId}/answers`, {
     method: "POST",
     token: input.token,
     body: JSON.stringify({
       question_external_id: input.questionExternalId,
-      choice_keys: input.choiceKeys,
+      choice_keys: input.choiceKeys ?? [],
+      short_answer: input.shortAnswer,
     }),
   });
 }
