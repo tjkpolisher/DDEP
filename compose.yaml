@@ -22,6 +22,14 @@ services:
       DDEP_ENVIRONMENT: ${DDEP_ENVIRONMENT:-local}
       DDEP_DATABASE_URL: ${DDEP_DATABASE_URL:-postgresql+psycopg://ddep:ddep@db:5432/ddep}
       DDEP_CORS_ORIGINS: ${DDEP_CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
+      DDEP_BOOTSTRAP_INVITE_CODE: ${DDEP_BOOTSTRAP_INVITE_CODE:-beta}
+      DDEP_BOOTSTRAP_INVITE_LABEL: ${DDEP_BOOTSTRAP_INVITE_LABEL:-Local beta}
+      DDEP_BOOTSTRAP_INVITE_OPERATOR: ${DDEP_BOOTSTRAP_INVITE_OPERATOR:-true}
+    command: >
+      sh -c "uv run --frozen alembic upgrade head
+      && uv run --frozen python -m ddep_backend.question_db import seeds/phase01_questions.json
+      && uv run --frozen python -m ddep_backend.service_mvp.bootstrap
+      && exec uv run --frozen uvicorn ddep_backend.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     depends_on:

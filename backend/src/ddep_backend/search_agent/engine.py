@@ -75,20 +75,25 @@ def _rank(
         url = str(candidate.url)
         dedupe = 0.0 if url in seen_urls else 1.0
         seen_urls.add(url)
-        score = ScoreBreakdown(
-            trust=round(candidate.trust_score * WEIGHTS["trust"], 4),
-            level_fit=round(
-                _level_fit(candidate.difficulty, request.learner_level) * WEIGHTS["level_fit"],
-                4,
-            ),
-            freshness=round(candidate.freshness_score * WEIGHTS["freshness"], 4),
-            practice=round(candidate.practice_score * WEIGHTS["practice"], 4),
-            dedupe=round(dedupe * WEIGHTS["dedupe"], 4),
-            total=0,
-        )
-        total = round(
-            score.trust + score.level_fit + score.freshness + score.practice + score.dedupe,
+        trust = round(candidate.trust_score * WEIGHTS["trust"], 4)
+        level_fit = round(
+            _level_fit(candidate.difficulty, request.learner_level) * WEIGHTS["level_fit"],
             4,
+        )
+        freshness = round(candidate.freshness_score * WEIGHTS["freshness"], 4)
+        practice = round(candidate.practice_score * WEIGHTS["practice"], 4)
+        dedupe_score = round(dedupe * WEIGHTS["dedupe"], 4)
+        total = round(
+            trust + level_fit + freshness + practice + dedupe_score,
+            4,
+        )
+        score = ScoreBreakdown(
+            trust=trust,
+            level_fit=level_fit,
+            freshness=freshness,
+            practice=practice,
+            dedupe=dedupe_score,
+            total=total,
         )
         ranked.append(
             LearningRecommendation(
@@ -101,7 +106,7 @@ def _rank(
                 recommendation_reason=_reason(candidate, request),
                 prerequisite_tags=candidate.prerequisite_tags,
                 concept_tags=candidate.concept_tags,
-                score=score.model_copy(update={"total": total}),
+                score=score,
             )
         )
     ranked.sort(key=lambda item: (-item.score.total, item.source_name, item.title))
@@ -118,7 +123,7 @@ def _fallback_candidates(
     broad_request = request.model_copy(update={"weak_concept_tags": [], "prerequisite_tags": []})
     fallback = [
         candidate
-        for candidate in provider.collect(broad_request, query_terms)
+        for candidate in provider.collect(broad_request, [])
         if candidate.is_verified
         and candidate.trust_score >= MIN_TRUST_SCORE
         and str(candidate.url) not in existing_urls

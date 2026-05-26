@@ -17,5 +17,5 @@
 - 전체 Phase gate: `uv run pytest`, `uv run ruff check`, `uv run mypy src`, `npm run lint`, `npm run build`
 
 ## 남은 리스크
-- Phase 03은 저장하지 않습니다. 결과 snapshot 보존과 사용자별 비교 권한은 Phase 05에서 처리합니다.
-- 화면은 Phase 05 API 연결 전까지 typed demo report로 구조를 고정합니다.
+- Phase 03 자체는 저장하지 않습니다. 저장, 사용자별 비교 권한, 추천 이력은 Phase 05 서비스 계층에서 처리합니다.
+- Phase 03 preview API는 stateless 검증용이며, 운영 흐름은 Phase 05 diagnosis completion API를 사용합니다.

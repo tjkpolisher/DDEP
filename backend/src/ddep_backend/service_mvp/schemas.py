@@ -15,6 +15,7 @@ class UserSummary(BaseModel):
     id: int
     display_name: str
     email: str | None = None
+    is_operator: bool
 
 
 class AccessVerifyRequest(BaseModel):

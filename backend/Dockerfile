@@ -11,6 +11,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY migrations ./migrations
+COPY seeds ./seeds
 COPY alembic.ini ./
 
 RUN uv sync --frozen --no-dev --no-cache
