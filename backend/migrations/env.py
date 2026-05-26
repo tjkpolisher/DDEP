@@ -5,8 +5,10 @@ from sqlalchemy import engine_from_config, pool
 
 from ddep_backend.core.config import get_settings
 from ddep_backend.db.base import Base
+from ddep_backend.question_db import models as question_db_models
 
 config = context.config
+_ = question_db_models
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
