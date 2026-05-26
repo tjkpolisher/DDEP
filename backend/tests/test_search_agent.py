@@ -8,14 +8,14 @@ from ddep_backend.search_agent.models import LearningResourceCandidate
 def test_generates_ranked_verified_recommendations_with_expected_bounds() -> None:
     run = recommend_learning_resources(
         RecommendationRequest(
-            weak_concept_tags=["attitude_control", "pid"],
-            prerequisite_tags=["imu"],
+            weak_concept_tags=["pid_control", "control_mixer"],
+            prerequisite_tags=["imu_sensor"],
             learner_level="intermediate",
         )
     )
 
     assert 3 <= len(run.recommendations) <= 7
-    assert "attitude_control" in run.query_terms
+    assert "pid_control" in run.query_terms
     assert all(recommendation.trust_score >= 0.7 for recommendation in run.recommendations)
     assert all(
         "example.com" not in str(recommendation.url) for recommendation in run.recommendations
@@ -38,6 +38,17 @@ def test_filters_low_trust_candidates_and_reports_fallback_reason() -> None:
     ]
 
 
+def test_default_provider_broad_fallback_still_returns_verified_resources() -> None:
+    run = recommend_learning_resources(
+        RecommendationRequest(weak_concept_tags=["unmapped_seed_concept"])
+    )
+
+    assert 3 <= len(run.recommendations) <= 7
+    assert run.fallback_reasons == [
+        "no_direct_concept_match",
+    ]
+
+
 def test_preview_endpoint_does_not_expose_raw_candidates() -> None:
     client = TestClient(create_app())
 
@@ -45,7 +56,7 @@ def test_preview_endpoint_does_not_expose_raw_candidates() -> None:
         "/recommendations/preview",
         json={
             "weak_concept_tags": ["sensor_fusion"],
-            "prerequisite_tags": ["imu"],
+            "prerequisite_tags": ["imu_sensor"],
             "learner_level": "intermediate",
         },
     )

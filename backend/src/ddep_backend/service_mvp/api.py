@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -106,6 +106,8 @@ def verify_access(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invite code exhausted")
 
     user = _resolve_user(session, request)
+    if invite.grants_operator:
+        user.is_operator = True
     token = new_bearer_token()
     expires_at = session_expiry(settings)
     access_session = AccessSession(
@@ -180,9 +182,8 @@ def save_answer(
     if question is None or request.question_external_id not in diagnosis.question_external_ids:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Question not found in diagnosis")
 
-    submitted = SubmittedAnswer.model_validate(request.model_dump())
-    outcome = grade_submitted_answer(question, submitted)
-    _upsert_answer(session, diagnosis, submitted)
+    outcome = grade_submitted_answer(question, request)
+    _upsert_answer(session, diagnosis, request)
     _upsert_outcome(session, diagnosis, outcome)
     _log_event(
         session,
@@ -220,8 +221,15 @@ def complete_diagnosis(
         )
 
     state = _state_from_outcomes(session, diagnosis)
-    if not state.answered_question_ids:
-        raise HTTPException(status.HTTP_409_CONFLICT, "At least one answer is required")
+    missing_question_ids = sorted(
+        set(diagnosis.question_external_ids) - set(state.answered_question_ids)
+    )
+    if missing_question_ids:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "All diagnosis questions must be answered before completion: "
+            f"{len(missing_question_ids)} missing",
+        )
     state = complete_session(state)
     questions = load_approved_engine_questions(session)
     graph = load_concept_prerequisite_graph(session)
@@ -235,14 +243,14 @@ def complete_diagnosis(
     _replace_result_snapshot(
         session,
         diagnosis,
-        result.model_dump(mode="json"),
-        report.model_dump(mode="json"),
+        result,
+        report,
     )
     _replace_recommendations(
         session,
         diagnosis,
-        recommendation_request.model_dump(mode="json"),
-        recommendation_run.model_dump(mode="json"),
+        recommendation_request,
+        recommendation_run,
     )
     _log_event(
         session,
@@ -317,7 +325,8 @@ def list_ops_events(
     user: CurrentUser,
     session: DbSession,
 ) -> list[OpsEventResponse]:
-    _ = user
+    if not user.is_operator:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Operator access required")
     events = session.scalars(select(OpsEvent).order_by(OpsEvent.id.desc()).limit(100)).all()
     return [
         OpsEventResponse(
@@ -499,8 +508,8 @@ def _answered_count(session: Session, diagnosis: DiagnosisSessionRecord) -> int:
 def _replace_result_snapshot(
     session: Session,
     diagnosis: DiagnosisSessionRecord,
-    result_json: dict[str, object],
-    report_json: dict[str, object],
+    result: DiagnosisResult,
+    report: ResultReport,
 ) -> None:
     if diagnosis.result_snapshot is not None:
         session.delete(diagnosis.result_snapshot)
@@ -508,8 +517,8 @@ def _replace_result_snapshot(
     session.add(
         ResultSnapshotRecord(
             diagnosis_id=diagnosis.id,
-            result_json=result_json,
-            report_json=report_json,
+            result_json=result.model_dump(mode="json"),
+            report_json=report.model_dump(mode="json"),
         )
     )
 
@@ -517,42 +526,32 @@ def _replace_result_snapshot(
 def _replace_recommendations(
     session: Session,
     diagnosis: DiagnosisSessionRecord,
-    request_json: dict[str, object],
-    run_json: dict[str, object],
+    request: RecommendationRequest,
+    run_result: RecommendationRun,
 ) -> None:
     if diagnosis.recommendation_run is not None:
         session.delete(diagnosis.recommendation_run)
         session.flush()
     run = RecommendationRunRecord(
         diagnosis_id=diagnosis.id,
-        request_json=request_json,
-        run_json=run_json,
-        fallback_reasons=cast(list[str], run_json.get("fallback_reasons", [])),
+        request_json=request.model_dump(mode="json"),
+        run_json=run_result.model_dump(mode="json"),
+        fallback_reasons=run_result.fallback_reasons,
     )
     session.add(run)
     session.flush()
-    raw_recommendations = cast(list[dict[str, object]], run_json.get("recommendations", []))
-    for index, item in enumerate(raw_recommendations, start=1):
-        if not isinstance(item, dict):
-            continue
-        trust_score = item["trust_score"]
-        trust_score_value = (
-            float(trust_score)
-            if isinstance(trust_score, int | float)
-            else float(str(trust_score))
-        )
-        score_json = cast(dict[str, object], item["score"])
+    for index, item in enumerate(run_result.recommendations, start=1):
         session.add(
             RecommendationItemRecord(
                 run_id=run.id,
                 sort_order=index,
-                title=str(item["title"]),
-                url=str(item["url"]),
-                source_type=str(item["source_type"]),
-                difficulty=str(item["difficulty"]),
-                trust_score=trust_score_value,
-                recommendation_reason=str(item["recommendation_reason"]),
-                score_json=score_json,
+                title=item.title,
+                url=item.url,
+                source_type=item.source_type,
+                difficulty=item.difficulty,
+                trust_score=item.trust_score,
+                recommendation_reason=item.recommendation_reason,
+                score_json=item.score.model_dump(mode="json"),
             )
         )
 
@@ -594,7 +593,12 @@ def _log_event(
 
 
 def _user_summary(user: InternalUser) -> UserSummary:
-    return UserSummary(id=user.id, display_name=user.display_name, email=user.email)
+    return UserSummary(
+        id=user.id,
+        display_name=user.display_name,
+        email=user.email,
+        is_operator=user.is_operator,
+    )
 
 
 def _is_expired(value: datetime | None) -> bool:

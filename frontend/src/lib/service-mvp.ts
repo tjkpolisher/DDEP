@@ -14,6 +14,7 @@ export const accessVerifyResponseSchema = z.object({
     id: z.number(),
     display_name: z.string(),
     email: z.string().nullable(),
+    is_operator: z.boolean(),
   }),
 });
 

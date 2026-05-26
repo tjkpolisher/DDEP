@@ -261,6 +261,7 @@ export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [diagnosis, setDiagnosis] = useState<DiagnosisSession | null>(null);
   const [selectedChoices, setSelectedChoices] = useState<Record<string, string>>({});
+  const [savedQuestionIds, setSavedQuestionIds] = useState<Set<string>>(new Set());
   const [completed, setCompleted] = useState<CompleteDiagnosisResponse | null>(null);
   const [workflowMessage, setWorkflowMessage] = useState("초대 코드로 내부 진단을 시작합니다");
 
@@ -324,6 +325,7 @@ export default function Home() {
             email={email}
             inviteCode={inviteCode}
             selectedChoices={selectedChoices}
+            savedQuestionIds={savedQuestionIds}
             token={token}
             workflowMessage={workflowMessage}
             onDisplayNameChange={setDisplayName}
@@ -353,6 +355,8 @@ export default function Home() {
                 const nextDiagnosis = await createDiagnosis(token);
                 setDiagnosis(nextDiagnosis);
                 setCompleted(null);
+                setSelectedChoices({});
+                setSavedQuestionIds(new Set());
                 setWorkflowMessage(`${nextDiagnosis.question_count}문항 진단이 시작됐습니다`);
               } catch (error) {
                 setWorkflowMessage(error instanceof Error ? error.message : "진단 시작 실패");
@@ -374,6 +378,7 @@ export default function Home() {
                   questionExternalId: questionId,
                   choiceKeys: [choiceKey],
                 });
+                setSavedQuestionIds((current) => new Set(current).add(questionId));
                 setWorkflowMessage(`${questionId} 답변이 저장됐습니다`);
               } catch (error) {
                 setWorkflowMessage(error instanceof Error ? error.message : "답변 저장 실패");
@@ -381,6 +386,12 @@ export default function Home() {
             }}
             onComplete={async () => {
               if (!token || !diagnosis) {
+                return;
+              }
+              if (savedQuestionIds.size < diagnosis.question_count) {
+                setWorkflowMessage(
+                  `모든 문항을 저장한 뒤 완료할 수 있습니다 (${savedQuestionIds.size}/${diagnosis.question_count})`,
+                );
                 return;
               }
               try {
@@ -445,6 +456,7 @@ function AccessAndDiagnosisPanel({
   email,
   inviteCode,
   selectedChoices,
+  savedQuestionIds,
   token,
   workflowMessage,
   onComplete,
@@ -461,6 +473,7 @@ function AccessAndDiagnosisPanel({
   email: string;
   inviteCode: string;
   selectedChoices: Record<string, string>;
+  savedQuestionIds: Set<string>;
   token: string | null;
   workflowMessage: string;
   onComplete: () => Promise<void>;
@@ -472,12 +485,17 @@ function AccessAndDiagnosisPanel({
   onSubmitAnswer: (questionId: string) => Promise<void>;
   onVerify: () => Promise<void>;
 }) {
-  const firstQuestion = diagnosis?.questions[0];
+  const answeredLabel = diagnosis
+    ? `${savedQuestionIds.size}/${diagnosis.question_count} 저장`
+    : "대기 중";
   return (
     <section className="rounded-md border border-[#d8dee9] bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold tracking-normal">내부 MVP 진단</h2>
-        <span className="text-sm text-[#536173]">{workflowMessage}</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-[#536173]">{answeredLabel}</span>
+          <span className="text-sm text-[#536173]">{workflowMessage}</span>
+        </div>
       </div>
       {!token ? (
         <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
@@ -517,43 +535,53 @@ function AccessAndDiagnosisPanel({
           진단 시작
         </button>
       ) : null}
-      {firstQuestion ? (
+      {diagnosis ? (
         <div className="grid gap-4">
-          <div className="rounded-md border border-[#e1e7ef] p-4">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-[#e5f4f3] px-2 py-1 text-xs font-semibold text-[#087f83]">
-                {domainLabel.get(firstQuestion.domain)}
-              </span>
-              <span className="rounded-md bg-[#edf2f7] px-2 py-1 text-xs text-[#536173]">
-                {firstQuestion.difficulty}
-              </span>
+          {diagnosis.questions.map((question, index) => (
+            <div className="rounded-md border border-[#e1e7ef] p-4" key={question.external_id}>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-md bg-[#e5f4f3] px-2 py-1 text-xs font-semibold text-[#087f83]">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className="rounded-md bg-[#e5f4f3] px-2 py-1 text-xs font-semibold text-[#087f83]">
+                  {domainLabel.get(question.domain)}
+                </span>
+                <span className="rounded-md bg-[#edf2f7] px-2 py-1 text-xs text-[#536173]">
+                  {question.difficulty}
+                </span>
+                {savedQuestionIds.has(question.external_id) ? (
+                  <span className="rounded-md bg-[#eef8ed] px-2 py-1 text-xs text-[#2f7d32]">
+                    저장됨
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-base font-semibold leading-7">{question.prompt}</p>
+              <div className="mt-4 grid gap-2">
+                {question.choices.map((choice) => (
+                  <label
+                    className="flex items-center gap-3 rounded-md border border-[#d8dee9] px-3 py-2 text-sm"
+                    key={choice.key}
+                  >
+                    <input
+                      checked={selectedChoices[question.external_id] === choice.key}
+                      name={question.external_id}
+                      onChange={() => onSelectChoice(question.external_id, choice.key)}
+                      type="radio"
+                    />
+                    <span>{choice.text}</span>
+                  </label>
+                ))}
+              </div>
+              <button
+                className="mt-4 rounded-md border border-[#087f83] px-4 py-2 text-sm font-semibold text-[#087f83]"
+                onClick={() => onSubmitAnswer(question.external_id)}
+                type="button"
+              >
+                답변 저장
+              </button>
             </div>
-            <p className="text-base font-semibold leading-7">{firstQuestion.prompt}</p>
-            <div className="mt-4 grid gap-2">
-              {firstQuestion.choices.map((choice) => (
-                <label
-                  className="flex items-center gap-3 rounded-md border border-[#d8dee9] px-3 py-2 text-sm"
-                  key={choice.key}
-                >
-                  <input
-                    checked={selectedChoices[firstQuestion.external_id] === choice.key}
-                    name={firstQuestion.external_id}
-                    onChange={() => onSelectChoice(firstQuestion.external_id, choice.key)}
-                    type="radio"
-                  />
-                  <span>{choice.text}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+          ))}
           <div className="flex flex-wrap gap-3">
-            <button
-              className="rounded-md border border-[#087f83] px-4 py-2 text-sm font-semibold text-[#087f83]"
-              onClick={() => onSubmitAnswer(firstQuestion.external_id)}
-              type="button"
-            >
-              답변 저장
-            </button>
             <button
               className="rounded-md bg-[#087f83] px-4 py-2 text-sm font-semibold text-white"
               onClick={onComplete}

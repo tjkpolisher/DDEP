@@ -51,8 +51,9 @@ Health check:
 curl http://localhost:8000/health
 ```
 
-Internal MVP access uses invite verification plus bearer tokens. Seed invite codes by inserting
-`sha256(f"{DDEP_ACCESS_TOKEN_SECRET}:<invite>")` into `invite_codes.code_hash`, then call:
+Internal MVP access uses invite verification plus bearer tokens. `docker compose up --build`
+runs migrations, imports `backend/seeds/phase01_questions.json`, and seeds a local operator invite.
+The default local invite code is `beta`; override it with `DDEP_BOOTSTRAP_INVITE_CODE`.
 
 ```bash
 curl -X POST http://localhost:8000/access/verify \
@@ -92,7 +93,7 @@ docker compose up --build
 - PostgreSQL: `localhost:5432`
 
 Docker가 없거나 daemon 접근이 실패하면 Docker Engine과 Compose plugin을 먼저 설치/활성화합니다.
-Phase 00 기본 DB 이미지는 `postgres:16`이며, `pgvector`는 Phase 04 검색 에이전트에서 재검토합니다.
+Phase 00 기본 DB 이미지는 `postgres:16`이며, `pgvector`는 외부 검색 provider가 필요해질 때 재검토합니다.
 
 ## 의존성 잠금
 
