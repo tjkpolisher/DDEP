@@ -131,7 +131,7 @@ def _retest_targets(
 ) -> list[RetestTarget]:
     targets: list[RetestTarget] = []
     for weak in result.weak_concepts[:5]:
-        domain = weak.domain or _domain_for_weak(result, weak.concept_slug)
+        domain = weak.domain
         if domain is None:
             continue
         targets.append(
@@ -192,13 +192,6 @@ def _weak_tags_by_domain(result: DiagnosisResult) -> dict[DiagnosisDomain, list[
         if weak.domain is not None:
             grouped.setdefault(weak.domain, []).append(weak.concept_slug)
     return grouped
-
-
-def _domain_for_weak(result: DiagnosisResult, concept_slug: str) -> DiagnosisDomain | None:
-    for weak in result.weak_concepts:
-        if weak.concept_slug == concept_slug:
-            return weak.domain
-    return None
 
 
 def _readiness(score: int, confidence: float) -> DomainReadiness:
