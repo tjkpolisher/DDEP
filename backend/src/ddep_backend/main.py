@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from ddep_backend import __version__
 from ddep_backend.core.config import get_settings
 from ddep_backend.domains import DIAGNOSIS_DOMAINS
+from ddep_backend.result_report.api import ResultReportPreviewRequest, preview_result_report
+from ddep_backend.result_report.models import ResultReport
 from ddep_backend.schemas.health import HealthResponse
 
 
@@ -27,6 +29,10 @@ def create_app() -> FastAPI:
             environment=settings.environment,
             domains=DIAGNOSIS_DOMAINS,
         )
+
+    @app.post("/result-report/preview")
+    async def result_report_preview(request: ResultReportPreviewRequest) -> ResultReport:
+        return preview_result_report(request)
 
     return app
 
